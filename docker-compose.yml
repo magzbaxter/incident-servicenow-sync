@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  incident-sync:
+    build: .
+    container_name: incident-servicenow-sync
+    restart: unless-stopped
+    
+    ports:
+      - "${PORT:-5002}:5002"
+    
+    environment:
+      # incident.io Configuration
+      - INCIDENT_IO_API_KEY=${INCIDENT_IO_API_KEY}
+      
+      # ServiceNow Configuration  
+      - SERVICENOW_USERNAME=${SERVICENOW_USERNAME}
+      - SERVICENOW_PASSWORD=${SERVICENOW_PASSWORD}
+      
+      # Webhook Configuration
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      
+      # Optional Configuration
+      - PORT=${PORT:-5002}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - NODE_ENV=${NODE_ENV:-production}
+    
+    volumes:
+      # Mount configuration files (optional - for easier config updates)
+      - ./config:/app/config:ro
+      
+      # Mount logs directory for persistence
+      - ./logs:/app/logs
+    
+    # Resource limits (adjust as needed)
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.2'
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Add monitoring with Prometheus metrics
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: prometheus
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+  #   command:
+  #     - '--config.file=/etc/prometheus/prometheus.yml'
+  #     - '--storage.tsdb.path=/prometheus'
+  #     - '--web.console.libraries=/etc/prometheus/console_libraries'
+  #     - '--web.console.templates=/etc/prometheus/consoles'
+
+  # Optional: Add Grafana for visualization
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: grafana
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+  #   volumes:
+  #     - grafana-data:/var/lib/grafana
+
+networks:
+  default:
+    name: incident-sync-network
+
+# volumes:
+#   grafana-data:

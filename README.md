@@ -1,61 +1,163 @@
-# incident.io to ServiceNow Sync
+# Incident.io ↔ ServiceNow Integration
 
-Automatically sync incidents between incident.io and ServiceNow without Zapier.
+An open-source, self-hosted integration that synchronizes incidents between incident.io and ServiceNow. This replaces the need for Zapier or other third-party automation tools.
 
-## Quick Setup
+## Features
 
-1. **Deploy to Railway:**
-   - Fork this repo
-   - Connect to Railway
-   - Set environment variables (see below)
+- **Real-time synchronization** - Webhook-based updates from incident.io
+- **Flexible field mapping** - Configure custom field mappings via JSON
+- **ServiceNow ID resolution** - Automatically resolve reference fields by name
+- **Deduplication** - Prevents duplicate work notes and updates
+- **Configurable workflows** - Handle incident creation and updates separately
+- **Comprehensive logging** - Detailed logs for troubleshooting
+- **Docker support** - Easy deployment with Docker
+- **Production ready** - Error handling, retries, and monitoring
 
-2. **Configure Environment Variables:**
+## Quick Start
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/your-org/incident-servicenow-sync.git
+   cd incident-servicenow-sync
    ```
-   INCIDENT_IO_WEBHOOK_SECRET=your_webhook_secret
-   INCIDENT_IO_API_KEY=your_incident_io_private_api_key
-   SERVICENOW_INSTANCE_URL=https://your-instance.service-now.com  
-   SERVICENOW_USERNAME=your_username
-   SERVICENOW_PASSWORD=your_password
+
+2. **Copy and configure**
+   ```bash
+   cp config/config.example.json config/config.json
+   cp config/field-mappings.example.json config/field-mappings.json
    ```
 
-3. **Set up incident.io webhook:**
-   - Go to incident.io Settings > Webhooks
-   - Add webhook URL: `https://your-railway-app.railway.app/webhook/incident`
-   - Select events: `incident.created`, `incident.updated`
+3. **Set environment variables**
+   ```bash
+   export INCIDENT_IO_API_KEY="your_incident_io_api_key"
+   export SERVICENOW_USERNAME="your_servicenow_username"
+   export SERVICENOW_PASSWORD="your_servicenow_password"
+   export WEBHOOK_SECRET="your_webhook_secret"
+   ```
 
-## Local Development
+4. **Run with Docker**
+   ```bash
+   docker-compose up -d
+   ```
 
-```bash
-npm install
-cp .env.example .env
-# Edit .env with your credentials
-npm run dev
+5. **Configure webhook in incident.io**
+   - URL: `https://your-domain.com/webhook`
+   - Events: `public_incident.incident_created_v2`, `public_incident.incident_updated_v2`
+
+## Configuration
+
+### Basic Configuration (`config/config.json`)
+
+```json
+{
+  "servicenow": {
+    "instance_url": "https://your-instance.service-now.com",
+    "table": "incident",
+    "incident_id_field": "u_incident_io_id"
+  },
+  "incident_io": {
+    "api_url": "https://api.incident.io/v2"
+  },
+  "webhook": {
+    "port": 5002,
+    "path": "/webhook",
+    "verify_signature": true
+  },
+  "logging": {
+    "level": "info"
+  }
+}
 ```
 
-## How it works
+### Field Mapping (`config/field-mappings.json`)
 
-- Receives incident.io webhooks for `incident.created` and `incident.updated` events
-- Calls incident.io API to get full incident details 
-- Creates/updates corresponding ServiceNow incidents
-- Updates ServiceNow work notes with incident.io updates (with deduplication)
-- Maps severity to urgency/impact
-- Tracks incidents via custom field `u_incident_io_id`
+```json
+{
+  "incident_creation": {
+    "short_description": {
+      "source": "incident.name",
+      "type": "text"
+    },
+    "description": {
+      "source": "incident.summary",
+      "type": "text"
+    },
+    "assigned_to": {
+      "source": "incident.incident_lead.name",
+      "type": "user_lookup",
+      "lookup_field": "name"
+    },
+    "service": {
+      "source": "incident.incident_type.name",
+      "type": "reference_lookup",
+      "lookup_table": "cmdb_ci_service",
+      "lookup_field": "name"
+    },
+    "urgency": {
+      "source": "incident.severity",
+      "type": "choice_mapping",
+      "mappings": {
+        "critical": "1",
+        "high": "2",
+        "medium": "3",
+        "low": "3"
+      }
+    }
+  },
+  "incident_updates": {
+    "work_notes": {
+      "source": "incident_update.message",
+      "type": "text",
+      "deduplicate": true
+    },
+    "state": {
+      "source": "incident.status",
+      "type": "choice_mapping",
+      "mappings": {
+        "investigating": "2",
+        "identified": "2", 
+        "monitoring": "3",
+        "resolved": "6",
+        "closed": "7"
+      }
+    }
+  }
+}
+```
+
+## Field Mapping Types
+
+- **`text`** - Direct text mapping
+- **`user_lookup`** - Look up ServiceNow user by name/email
+- **`reference_lookup`** - Look up reference by name in specified table
+- **`choice_mapping`** - Map values using predefined mappings
+- **`expression`** - Use JavaScript expressions for complex mappings
 
 ## ServiceNow Setup
 
-You'll need to create a custom field in your ServiceNow incident table:
+Create a custom field in your ServiceNow incident table:
 - Field name: `u_incident_io_id` 
 - Type: String
 - Label: "Incident.io ID"
 
-## Field Mappings
+## Documentation
 
-| incident.io | ServiceNow |
-|-------------|------------|
-| Critical    | Urgency 1, Impact 1 |
-| High        | Urgency 2, Impact 2 |
-| Medium/Low  | Urgency 3, Impact 3 |
+- [Setup Guide](docs/SETUP.md) - Detailed setup instructions
+- [Field Mapping Guide](docs/FIELD_MAPPING.md) - Configure custom field mappings  
+- [API Reference](docs/API.md) - Webhook and REST API documentation
+- [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
 
 ## Health Check
 
-`GET /health` - Returns service status
+`GET /health` - Returns service status and configuration info
+
+## Requirements
+
+- Node.js 18+
+- ServiceNow instance with REST API access
+- incident.io organization with API access
+- HTTPS endpoint for webhook reception
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.

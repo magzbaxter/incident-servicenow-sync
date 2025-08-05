@@ -1,0 +1,53 @@
+{
+  "servicenow": {
+    "instance_url": "https://your-instance.service-now.com",
+    "table": "incident",
+    "incident_id_field": "u_incident_io_id",
+    "auth": {
+      "type": "basic",
+      "username": "${SERVICENOW_USERNAME}",
+      "password": "${SERVICENOW_PASSWORD}"
+    },
+    "api_timeout": 30000,
+    "retry_attempts": 3,
+    "retry_delay": 1000
+  },
+  "incident_io": {
+    "api_url": "https://api.incident.io/v2",
+    "api_key": "${INCIDENT_IO_API_KEY}",
+    "api_timeout": 30000,
+    "retry_attempts": 3,
+    "retry_delay": 1000
+  },
+  "webhook": {
+    "port": 5002,
+    "path": "/webhook",
+    "verify_signature": true,
+    "secret": "${WEBHOOK_SECRET}"
+  },
+  "servicenow_webhook": {
+    "verify_signature": false,
+    "secret": "${SERVICENOW_WEBHOOK_SECRET}"
+  },
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "file": "logs/app.log"
+  },
+  "features": {
+    "create_incidents": true,
+    "update_incidents": true,
+    "deduplicate_work_notes": true,
+    "sync_attachments": false,
+    "reverse_sync": true,
+    "sync_status": false,
+    "sync_severity": false
+  },
+  "performance": {
+    "concurrent_requests": 5,
+    "batch_size": 10,
+    "rate_limit": {
+      "requests_per_minute": 60
+    }
+  }
+}

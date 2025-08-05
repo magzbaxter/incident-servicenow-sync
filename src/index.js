@@ -1,204 +1,195 @@
+#!/usr/bin/env node
+
+/**
+ * Incident.io to ServiceNow Integration
+ * 
+ * A comprehensive, production-ready integration that syncs incidents
+ * between incident.io and ServiceNow with flexible field mapping,
+ * ServiceNow ID lookup, and advanced features.
+ */
+
 require('dotenv').config();
-const express = require('express');
-const crypto = require('crypto');
-const ServiceNowClient = require('./servicenow-client');
-const IncidentIOClient = require('./incident-io-client');
 
-const app = express();
-const port = process.env.PORT || 3000;
+const path = require('path');
+const App = require('./app');
 
-app.use(express.json());
-
-const servicenow = new ServiceNowClient({
-  instanceUrl: process.env.SERVICENOW_INSTANCE_URL,
-  username: process.env.SERVICENOW_USERNAME,
-  password: process.env.SERVICENOW_PASSWORD
+// Handle uncaught exceptions gracefully
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
 });
 
-const incidentio = new IncidentIOClient(process.env.INCIDENT_IO_API_KEY);
-
-// Webhook signature verification middleware
-function verifyWebhookSignature(req, res, next) {
-  const signature = req.headers['x-incident-signature'];
-  const secret = process.env.INCIDENT_IO_WEBHOOK_SECRET;
-  
-  if (!signature || !secret) {
-    console.log('Missing signature or secret');
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const payload = JSON.stringify(req.body);
-  const expectedSignature = crypto
-    .createHmac('sha256', secret)
-    .update(payload)
-    .digest('hex');
-
-  if (signature !== `sha256=${expectedSignature}`) {
-    console.log('Signature mismatch');
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  next();
-}
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
 });
 
-// Main webhook endpoint
-app.post('/webhook/incident', verifyWebhookSignature, async (req, res) => {
+/**
+ * Main entry point
+ */
+async function main() {
   try {
-    console.log('Received webhook:', JSON.stringify(req.body, null, 2));
+    console.log('🚀 Starting incident.io → ServiceNow Integration...');
+    console.log(`📁 Working directory: ${process.cwd()}`);
+    console.log(`📦 Version: ${process.env.npm_package_version || '2.0.0'}`);
+    console.log(`🔧 Node.js: ${process.version}`);
     
-    const { event_type, incident } = req.body;
-    
-    if (!incident) {
-      return res.status(400).json({ error: 'No incident data found' });
+    // Create and start the application
+    const app = new App();
+    const server = await app.start();
+
+    console.log('✅ Integration started successfully!');
+    console.log('📊 Health check: GET /health');
+    console.log('🔗 Webhook endpoint: POST /webhook');
+    console.log('🔧 Manual sync: POST /sync/incident/:incidentId');
+
+    // Display configuration summary (without sensitive data)
+    if (app.config) {
+      console.log('\n📋 Configuration Summary:');
+      console.log(`   ServiceNow: ${app.config.servicenow?.instance_url}`);
+      console.log(`   incident.io: ${app.config.incident_io?.api_url}`);
+      console.log(`   Webhook port: ${app.config.webhook?.port || 5002}`);
+      console.log(`   Features: ${JSON.stringify(app.config.features)}`);
     }
 
-    switch (event_type) {
-      case 'incident.created':
-        await handleIncidentCreated(incident);
-        break;
-      case 'incident.updated':
-        await handleIncidentUpdated(incident);
-        break;
-      default:
-        console.log(`Unhandled event type: ${event_type}`);
+    // Graceful shutdown handling
+    const shutdown = async (signal) => {
+      console.log(`\n🛑 Received ${signal}, shutting down gracefully...`);
+      
+      if (server) {
+        server.close(() => {
+          console.log('✅ HTTP server closed');
+          process.exit(0);
+        });
+        
+        // Force close after 10 seconds
+        setTimeout(() => {
+          console.log('⚠️  Forcing shutdown after timeout');
+          process.exit(1);
+        }, 10000);
+      } else {
+        process.exit(0);
+      }
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+
+  } catch (error) {
+    console.error('❌ Failed to start integration:', error.message);
+    
+    // Display helpful error messages for common issues
+    if (error.message.includes('No configuration file found')) {
+      console.error('\n💡 Quick fix:');
+      console.error('   cp config/config.example.json config/config.json');
+      console.error('   cp config/field-mappings.example.json config/field-mappings.json');
+      console.error('   # Then edit config/config.json with your settings');
+    }
+    
+    if (error.message.includes('environment variable') && error.message.includes('not set')) {
+      console.error('\n💡 Required environment variables:');
+      console.error('   INCIDENT_IO_API_KEY=your_api_key');
+      console.error('   SERVICENOW_USERNAME=your_username');
+      console.error('   SERVICENOW_PASSWORD=your_password');
+      console.error('   WEBHOOK_SECRET=your_webhook_secret');
+      console.error('\n   You can set these in a .env file or as environment variables');
     }
 
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Webhook processing error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('\n📚 For more help, see the README.md or docs/');
+    process.exit(1);
   }
-});
-
-async function handleIncidentCreated(incident) {
-  console.log(`Creating ServiceNow incident for: ${incident.name || incident.id}`);
-  
-  // Call incident.io API to get full incident details (like Chris does)
-  let fullIncident;
-  try {
-    fullIncident = await incidentio.getIncident(incident.id);
-  } catch (error) {
-    console.log('Failed to fetch full incident details, using webhook data');
-    fullIncident = incident;
-  }
-  
-  const servicenowIncident = await servicenow.createIncident({
-    short_description: fullIncident.name || fullIncident.id,
-    description: fullIncident.summary || 'Created from incident.io',
-    urgency: mapSeverityToUrgency(fullIncident.severity?.name),
-    impact: mapSeverityToImpact(fullIncident.severity?.name),
-    state: mapStatusToState(fullIncident.status?.name),
-    u_incident_io_id: fullIncident.id
-  });
-
-  console.log('ServiceNow incident created:', servicenowIncident.number);
 }
 
-async function handleIncidentUpdated(incident) {
-  console.log(`Updating ServiceNow incident for: ${incident.name || incident.id}`);
+// CLI argument handling
+if (require.main === module) {
+  const args = process.argv.slice(2);
   
-  // Call incident.io API to get full incident details (like Chris does)
-  let fullIncident;
-  try {
-    fullIncident = await incidentio.getIncident(incident.id);
-  } catch (error) {
-    console.log('Failed to fetch full incident details, using webhook data');
-    fullIncident = incident;
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log(`
+Incident.io to ServiceNow Integration
+
+Usage: node src/index.js [options]
+
+Options:
+  --help, -h          Show this help message
+  --version, -v       Show version information
+  --validate-config   Validate configuration files
+  --health-check      Run health check and exit
+
+Environment Variables:
+  INCIDENT_IO_API_KEY     incident.io API key (required)
+  SERVICENOW_USERNAME     ServiceNow username (required)
+  SERVICENOW_PASSWORD     ServiceNow password (required)
+  WEBHOOK_SECRET          Webhook signature secret (required)
+  PORT                    HTTP server port (default: 5002)
+  LOG_LEVEL              Logging level (default: info)
+
+Configuration Files:
+  config/config.json          Main configuration
+  config/field-mappings.json  Field mapping configuration
+
+Examples:
+  node src/index.js                    # Start the integration
+  node src/index.js --validate-config  # Validate configuration
+  node src/index.js --health-check     # Run health check
+
+For more information, visit: https://github.com/your-org/incident-servicenow-sync
+`);
+    process.exit(0);
   }
   
-  // Find the ServiceNow incident by incident.io ID
-  const servicenowIncident = await servicenow.findIncidentByIncidentIoId(fullIncident.id);
+  if (args.includes('--version') || args.includes('-v')) {
+    console.log(`incident-servicenow-sync v${process.env.npm_package_version || '2.0.0'}`);
+    process.exit(0);
+  }
   
-  if (!servicenowIncident) {
-    console.log('ServiceNow incident not found, creating new one');
-    await handleIncidentCreated(fullIncident);
+  if (args.includes('--validate-config')) {
+    const ConfigManager = require('./config-manager');
+    const config = new ConfigManager();
+    
+    console.log('🔍 Validating configuration...');
+    
+    config.load()
+      .then(() => {
+        console.log('✅ Configuration is valid');
+        console.log('📋 Configuration summary:');
+        console.log(JSON.stringify(config.getConfigSummary(), null, 2));
+        process.exit(0);
+      })
+      .catch((error) => {
+        console.error('❌ Configuration validation failed:', error.message);
+        process.exit(1);
+      });
     return;
   }
-
-  // Update work notes with incident updates (Chris's key feature)
-  await updateWorkNotesWithLatestUpdates(fullIncident.id, servicenowIncident.sys_id);
-
-  // Update main incident fields  
-  await servicenow.updateIncident(servicenowIncident.sys_id, {
-    short_description: fullIncident.name || fullIncident.id,
-    description: fullIncident.summary || 'Updated from incident.io',
-    urgency: mapSeverityToUrgency(fullIncident.severity?.name),
-    impact: mapSeverityToImpact(fullIncident.severity?.name),
-    state: mapStatusToState(fullIncident.status?.name)
-  });
-
-  console.log('ServiceNow incident updated:', servicenowIncident.number);
-}
-
-async function updateWorkNotesWithLatestUpdates(incidentId, servicenowSysId) {
-  try {
-    // Get incident updates from incident.io
-    const updates = await incidentio.getIncidentUpdates(incidentId);
+  
+  if (args.includes('--health-check')) {
+    console.log('🏥 Running health check...');
     
-    if (!updates || updates.length === 0) {
-      return;
-    }
-
-    // Get existing work notes to check for duplicates (Chris's deduplication)
-    const existingWorkNotes = await servicenow.getWorkNotes(servicenowSysId);
+    const App = require('./app');
+    const app = new App();
     
-    // Add new updates that aren't already in work notes
-    for (const update of updates) {
-      const updateText = update.message || update.body || 'Update from incident.io';
-      
-      // Simple deduplication - check if this update text already exists
-      if (existingWorkNotes.includes(updateText)) {
-        continue;
-      }
-      
-      const workNoteEntry = `[${new Date(update.created_at || Date.now()).toISOString()}] ${updateText}`;
-      await servicenow.addWorkNotes(servicenowSysId, workNoteEntry);
-      console.log('Added work note:', updateText.substring(0, 50) + '...');
-    }
-  } catch (error) {
-    console.error('Error updating work notes:', error.message);
+    app.initialize()
+      .then(() => app.incidentHandler.healthCheck())
+      .then((health) => {
+        console.log('📊 Health check results:');
+        console.log(JSON.stringify(health, null, 2));
+        
+        if (health.status === 'healthy') {
+          console.log('✅ All systems healthy');
+          process.exit(0);
+        } else {
+          console.log('⚠️  Some systems unhealthy');
+          process.exit(1);
+        }
+      })
+      .catch((error) => {
+        console.error('❌ Health check failed:', error.message);
+        process.exit(1);
+      });
+    return;
   }
+  
+  // Default: start the main application
+  main();
 }
-
-// Mapping functions
-function mapSeverityToUrgency(severity) {
-  const mapping = {
-    'Critical': '1',
-    'High': '2', 
-    'Medium': '3',
-    'Low': '3'
-  };
-  return mapping[severity] || '3';
-}
-
-function mapSeverityToImpact(severity) {
-  const mapping = {
-    'Critical': '1',
-    'High': '2',
-    'Medium': '3', 
-    'Low': '3'
-  };
-  return mapping[severity] || '3';
-}
-
-function mapStatusToState(status) {
-  const mapping = {
-    'Open': '1',
-    'Investigating': '2',
-    'Identified': '2',
-    'Monitoring': '6',
-    'Resolved': '6',
-    'Closed': '7'
-  };
-  return mapping[status] || '1';
-}
-
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-  console.log(`Webhook URL: ${process.env.RAILWAY_STATIC_URL || `http://localhost:${port}`}/webhook/incident`);
-});
