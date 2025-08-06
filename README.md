@@ -48,7 +48,12 @@ cp config/field-mappings.example.json config/field-mappings.json
 
 ### 3. Set Environment Variables
 
-Create a `.env` file:
+Create a `.env` file (copy from `.env.example`):
+```bash
+cp .env.example .env
+```
+
+Then edit your `.env` file with your actual values:
 ```bash
 # incident.io Configuration
 INCIDENT_IO_API_KEY=your_incident_io_api_key
@@ -69,7 +74,6 @@ SERVICENOW_WEBHOOK_VERIFY_SIGNATURE=false
 
 # Optional: ServiceNow Link Field (for adding ServiceNow links to incident.io)
 SERVICENOW_LINK_FIELD_ID=your_custom_field_uuid
-SERVICENOW_INSTANCE_URL=https://your-instance.service-now.com
 
 # Optional: External port for Docker (if different from internal port)
 EXTERNAL_PORT=3000
@@ -364,7 +368,7 @@ The field mappings configuration controls how data is transformed between system
 | `SERVICENOW_WEBHOOK_SECRET` | Secret for ServiceNow webhook verification | ❌ |
 | `SERVICENOW_WEBHOOK_VERIFY_SIGNATURE` | Enable ServiceNow webhook signature verification | ❌ (default: false) |
 | `LOG_LEVEL` | Logging level (debug/info/warn/error) | ❌ (default: info) |
-| `SERVICENOW_LINK_FIELD_ID` | Custom field UUID for ServiceNow links | ❌ |
+| `SERVICENOW_LINK_FIELD_ID` | Custom field UUID for ServiceNow links ([see setup guide](#servicenow-link-field-optional)) | ❌ |
 | `SERVICENOW_INSTANCE_URL` | ServiceNow instance URL for links | ❌ |
 | `PORT` | Webhook server port | ✅ |
 
@@ -402,6 +406,33 @@ Display: ✅ Checked
 ```
 - **Purpose**: Store direct link to incident.io incident for easy access
 - **Optional**: Only needed if you want ServiceNow users to have quick links
+
+### ServiceNow Link Field (Optional)
+
+If you want to automatically add ServiceNow links to your incident.io incidents, you need to:
+
+#### Step 1: Create a Custom Field in incident.io
+1. Go to **Settings → Custom Fields** in your incident.io dashboard
+2. Click **New Custom Field**
+3. Configure the field:
+   ```
+   Field name: ServiceNow Link
+   Field type: Link
+   Description: Link to ServiceNow incident record
+   Show in incident header: ✅ (recommended)
+   ```
+4. Click **Create**
+
+#### Step 2: Get the Custom Field UUID
+1. After creating the field, go to **Settings → Custom Fields**
+2. Click on your "ServiceNow Link" field
+3. Copy the UUID from the browser URL (e.g., `01234567-89ab-cdef-0123-456789abcdef`)
+4. Set this as your `SERVICENOW_LINK_FIELD_ID` environment variable
+
+#### Step 3: Enable the Feature
+1. Set `SERVICENOW_LINK_FIELD_ID=your_copied_uuid` in your `.env` file
+2. Ensure `SERVICENOW_INSTANCE_URL=https://your-instance.service-now.com` is set
+3. The integration will automatically add ServiceNow links to new incidents
 
 ### User Mapping
 
