@@ -277,67 +277,93 @@ Create a Business Rule in ServiceNow to send webhooks on incident updates:
 **Table**: `incident`  
 **When**: `after`  
 **Update**: ✅ Checked  
-**Conditions**: 
-```javascript
-// Only sync incidents that have an incident.io ID
-gs.nil(current.u_incident_io_id) == false
-```
+**Conditions**: `incident.io Id` `is not empty`
 
 **Script**:
 ```javascript
 (function executeRule(current, previous) {
-    try {
-        var restMessage = new sn_ws.RESTMessageV2();
-        restMessage.setEndpoint('https://your-domain.com/webhook/servicenow');
-        restMessage.setHttpMethod('POST');
-        restMessage.setRequestHeader('Content-Type', 'application/json');
-        
-        // Optional: Add signature verification
-        // restMessage.setRequestHeader('X-ServiceNow-Signature', 'sha256=' + signature);
-        
-        var payload = {
-            sys_id: current.sys_id.toString(),
-            table: 'incident',
-            operation: 'update',
-            updated_fields: getUpdatedFields(current, previous),
-            old_values: getOldValues(current, previous)
-        };
-        
-        restMessage.setRequestBody(JSON.stringify(payload));
-        
-        var response = restMessage.execute();
-        gs.info('incident.io webhook sent - Status: ' + response.getStatusCode());
-        
-    } catch (error) {
-        gs.error('Error sending incident.io webhook: ' + error.message);
-    }
-    
-    // Helper functions
-    function getUpdatedFields(current, previous) {
-        var fields = [];
-        var trackFields = ['incident_state', 'priority', 'urgency', 'impact', 'short_description', 'description', 'work_notes'];
-        
-        for (var i = 0; i < trackFields.length; i++) {
-            var field = trackFields[i];
-            if (current[field].toString() !== previous[field].toString()) {
-                fields.push(field);
-            }
-        }
-        return fields;
-    }
-    
-    function getOldValues(current, previous) {
-        var oldValues = {};
-        var trackFields = ['incident_state', 'priority', 'urgency', 'impact', 'short_description', 'description', 'work_notes'];
-        
-        for (var i = 0; i < trackFields.length; i++) {
-            var field = trackFields[i];
-            if (current[field].toString() !== previous[field].toString()) {
-                oldValues[field] = previous[field].toString();
-            }
-        }
-        return oldValues;
-    }
+
+      // Only process incidents that have an incident.io ID
+      if (!current.u_incident_io_id || current.u_incident_io_id.isEmpty()) {
+          gs.info('Incident.io sync: Skipping incident without incident.io ID - ' + current.number);
+          return;
+      }
+
+      // Check if any relevant fields changed
+      var relevantFields = ['short_description', 'description', 'work_notes', 'incident_state', 'urgency', 'impact', 'priority'];
+      var changedFields = [];
+      var oldValues = {};
+
+      for (var i = 0; i < relevantFields.length; i++) {
+          var field = relevantFields[i];
+          if (current[field].changes()) {
+              changedFields.push(field);
+              oldValues[field] = previous[field].toString();
+          }
+      }
+
+      // If no relevant fields changed, don't send webhook
+      if (changedFields.length === 0) {
+          gs.info('Incident.io sync: No relevant fields changed for incident ' + current.number);
+          return;
+      }
+
+      // Prepare webhook payload
+      var payload = {
+          sys_id: current.sys_id.toString(),
+          table: 'incident',
+          operation: 'update',
+          number: current.number.toString(),
+          incident_io_id: current.u_incident_io_id.toString(),
+          updated_fields: changedFields,
+          old_values: oldValues,
+          new_values: {
+              short_description: current.short_description.toString(),
+              description: current.description.toString(),
+              work_notes: current.work_notes.toString(),
+              incident_state: current.incident_state.toString(),
+              urgency: current.urgency.toString(),
+              impact: current.impact.toString(),
+              priority: current.priority.toString()
+          },
+          updated_by: current.sys_updated_by.toString(),
+          updated_on: current.sys_updated_on.toString()
+      };
+
+      gs.info('Incident.io sync: Sending webhook for incident ' + current.number +
+              ', changed fields: ' + changedFields.join(', '));
+
+      // Send webhook notification
+      try {
+          var restMessage = new sn_ws.RESTMessageV2();
+
+          // IMPORTANT: Replace with your actual webhook URL
+          // If testing locally with ngrok: https://your-ngrok-url.ngrok-free.app/webhook/servicenow
+          // If production: https://your-production-url.com/webhook/servicenow
+          restMessage.setEndpoint('your_webhook/webhook/servicenow');
+
+          restMessage.setHttpMethod('POST');
+          restMessage.setRequestHeader('Content-Type', 'application/json');
+
+          // Optional: Add authentication if you enabled signature verification
+          // restMessage.setRequestHeader('X-ServiceNow-Signature', generateSignature(JSON.stringify(payload)));
+
+          restMessage.setRequestBody(JSON.stringify(payload));
+
+          var response = restMessage.execute();
+          var responseBody = response.getBody();
+          var httpStatus = response.getStatusCode();
+
+          if (httpStatus == 200) {
+              gs.info('Incident.io webhook sent successfully: ' + httpStatus + ' - ' + responseBody);
+          } else {
+              gs.error('Incident.io webhook failed: ' + httpStatus + ' - ' + responseBody);
+          }
+
+      } catch (ex) {
+          gs.error('Failed to send incident.io webhook: ' + ex.getMessage());
+      }
+
 })(current, previous);
 ```
 
@@ -423,17 +449,6 @@ Display: ✅ Checked
 ```
 - **Purpose**: Store the incident.io incident ID for linking records
 - **Critical**: This field is required for bidirectional sync to work
-
-#### Field 2: u_incident_io_url (OPTIONAL)
-```
-Column label: Incident.io URL
-Column name: u_incident_io_url
-Type: URL
-Max length: 255
-Display: ✅ Checked
-```
-- **Purpose**: Store direct link to incident.io incident for easy access
-- **Optional**: Only needed if you want ServiceNow users to have quick links
 
 ### ServiceNow Link Field (Optional)
 
