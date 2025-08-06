@@ -62,7 +62,14 @@ class FieldMapper {
 
         // Get source value
         const sourceValue = this.getSourceValue(mapping.source, incidentData);
-        if (sourceValue === null || sourceValue === undefined) {
+        
+        // For work_notes field, allow empty strings to be processed
+        const isWorkNotes = fieldName === 'work_notes';
+        const shouldSkipField = isWorkNotes 
+          ? (sourceValue === null || sourceValue === undefined)
+          : (sourceValue === null || sourceValue === undefined || sourceValue === '');
+          
+        if (shouldSkipField) {
           if (mapping.required) {
             errors.push(`Required field ${fieldName} has no source value`);
             continue;
@@ -161,6 +168,11 @@ class FieldMapper {
    * Map text field with optional transformations
    */
   mapTextField(value, mapping) {
+    // Handle empty strings for work_notes - convert to null to skip update
+    if (value === '' && mapping.skip_empty_strings !== false) {
+      return null;
+    }
+    
     if (typeof value !== 'string') {
       value = String(value);
     }

@@ -156,7 +156,6 @@ class IncidentHandler {
   async updateIncident(incidentId, webhookPayload = null) {
     this.logger.info('Processing incident update', { incident_id: incidentId });
 
-    // Check if we should skip this update due to recent reverse sync
     if (this.shouldSkipForwardSync(incidentId)) {
       return null; // Skip this update to prevent sync loop
     }
@@ -171,10 +170,30 @@ class IncidentHandler {
         return await this.createIncident(incidentId, webhookPayload);
       }
 
-      // Always fetch fresh incident details from incident.io to ensure current data
-      // Note: Webhook payloads may contain stale data, so we always fetch current data
+      // Fetch fresh incident details from API, but preserve webhook-only fields
       this.logger.info('About to fetch fresh incident data from API', { incident_id: incidentId });
-      const incidentData = await this.incidentIOClient.getIncident(incidentId);
+      const apiIncidentData = await this.incidentIOClient.getIncident(incidentId);
+      
+      // Merge API data with webhook payload to preserve webhook-only fields like most_recent_update_message
+      let incidentData = apiIncidentData;
+      if (webhookPayload && webhookPayload['public_incident.incident_updated_v2']) {
+        const webhookIncident = webhookPayload['public_incident.incident_updated_v2'];
+        this.logger.debug('Merging webhook data with API data', {
+          webhook_has_message: !!webhookIncident.most_recent_update_message,
+          webhook_message: webhookIncident.most_recent_update_message,
+          webhook_keys: Object.keys(webhookIncident || {})
+        });
+        // Merge webhook-specific fields that aren't in API response
+        if (webhookIncident.most_recent_update_message !== undefined) {
+          incidentData = {
+            ...apiIncidentData,
+            incident: {
+              ...apiIncidentData.incident,
+              most_recent_update_message: webhookIncident.most_recent_update_message
+            }
+          };
+        }
+      }
       this.logger.info('Fetched fresh incident data', { 
         incident_id: incidentId,
         severity_name: incidentData.incident?.severity?.name,

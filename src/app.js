@@ -174,7 +174,6 @@ class App {
     // Main webhook endpoint
     this.express.post(this.config.webhook.path || '/webhook', async (req, res) => {
       try {
-        // Verify webhook signature if enabled
         if (this.config.webhook.verify_signature) {
           if (!this.verifyWebhookSignature(req)) {
             this.logger.warn('Invalid webhook signature', { ip: req.ip });
