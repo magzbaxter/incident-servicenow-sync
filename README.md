@@ -366,16 +366,36 @@ The field mappings configuration controls how data is transformed between system
 
 ### Required Custom Fields
 
-Create these custom fields in your ServiceNow incident table:
+You must create these custom fields in your ServiceNow incident table:
 
-1. **u_incident_io_id** (String, 40 characters)
-   - Purpose: Store the incident.io incident ID for linking
-   - Required: Yes
-   - Unique: Yes
+#### Step-by-Step Instructions:
+1. Navigate to **System Definition → Tables**
+2. Find and open the **Incident [incident]** table
+3. Go to the **Columns** tab
+4. Click **New** to create each field
 
-2. **u_incident_io_url** (URL, 255 characters) 
-   - Purpose: Store link to incident.io incident
-   - Required: No
+#### Field 1: u_incident_io_id (REQUIRED)
+```
+Column label: Incident.io ID
+Column name: u_incident_io_id
+Type: String
+Max length: 40
+Unique: ✅ Checked (critical for preventing duplicates)
+Display: ✅ Checked
+```
+- **Purpose**: Store the incident.io incident ID for linking records
+- **Critical**: This field is required for bidirectional sync to work
+
+#### Field 2: u_incident_io_url (OPTIONAL)
+```
+Column label: Incident.io URL
+Column name: u_incident_io_url
+Type: URL
+Max length: 255
+Display: ✅ Checked
+```
+- **Purpose**: Store direct link to incident.io incident for easy access
+- **Optional**: Only needed if you want ServiceNow users to have quick links
 
 ### User Mapping
 
