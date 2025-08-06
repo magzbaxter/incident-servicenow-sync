@@ -78,7 +78,7 @@
       "description": "Update ServiceNow description from incident.io summary"
     },
     "work_notes": {
-      "source": "incident_update.message", 
+      "source": "incident.most_recent_update_message", 
       "type": "text",
       "deduplicate": true,
       "dedupe_field": "work_notes",

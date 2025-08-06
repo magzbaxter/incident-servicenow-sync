@@ -180,6 +180,7 @@ class IncidentHandler {
         severity_name: incidentData.incident?.severity?.name,
         status_name: incidentData.incident?.incident_status?.name
       });
+
       
       // Map incident.io data to ServiceNow fields for update
       const mappedData = await this.fieldMapper.mapForUpdate(

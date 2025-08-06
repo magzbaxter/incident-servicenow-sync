@@ -13,7 +13,6 @@ This integration synchronizes the following core incident data between systems:
 | **Summary** | Description | Detailed incident description |
 | **Severity** | Impact & Urgency | Maps severity levels to ServiceNow priority fields |
 | **Status** | State | Incident status/workflow state |
-| **Updates** | Work Notes | Timeline updates and comments |
 | **ID & URL** | Custom Fields | Links for cross-system navigation |
 
 ### Reverse Sync (ServiceNow → incident.io)
