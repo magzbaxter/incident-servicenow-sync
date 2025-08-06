@@ -453,9 +453,6 @@ For issues and questions:
 - Monitor logs for unauthorized access attempts
 - Use HTTPS for all webhook endpoints
 
-## License
-
-[Add your license information here]
 
 ```json
 {
