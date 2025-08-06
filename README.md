@@ -23,7 +23,6 @@ This integration synchronizes the following core incident data between systems:
 | **Description** | Summary | Description changes |
 | **Priority/Impact/Urgency** | Severity | Priority changes mapped to severity |
 | **State** | Status | Workflow state changes |
-| **Work Notes** | Updates | Comments and status updates |
 
 **Key Features:**
 - **Essential field mapping** - Core incident data only, avoiding complex CMDB integrations
