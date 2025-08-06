@@ -57,10 +57,10 @@ This integration synchronizes the following core incident data between systems:
 ## Quick Start
 
 ### Prerequisites
-- Node.js 18+ 
-- Docker and Docker Compose (recommended)
+- Node.js 18+
 - incident.io organization with API access
 - ServiceNow instance with REST API access
+- Docker and Docker Compose (optional, for containerized deployment)
 
 ### 1. Clone and Setup
 ```bash
