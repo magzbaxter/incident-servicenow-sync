@@ -2,6 +2,35 @@
 
 A production-ready integration that provides real-time bidirectional synchronization between incident.io and ServiceNow incident management systems.
 
+## Sync Scope
+
+This integration synchronizes the following core incident data between systems:
+
+### Forward Sync (incident.io → ServiceNow)
+| incident.io Field | ServiceNow Field | Description |
+|---|---|---|
+| **Name** | Short Description | Incident title |
+| **Summary** | Description | Detailed incident description |
+| **Severity** | Impact & Urgency | Maps severity levels to ServiceNow priority fields |
+| **Status** | State | Incident status/workflow state |
+| **Updates** | Work Notes | Timeline updates and comments |
+| **ID & URL** | Custom Fields | Links for cross-system navigation |
+
+### Reverse Sync (ServiceNow → incident.io)
+| ServiceNow Field | incident.io Field | Description |
+|---|---|---|
+| **Short Description** | Name | Incident title updates |
+| **Description** | Summary | Description changes |
+| **Priority/Impact/Urgency** | Severity | Priority changes mapped to severity |
+| **State** | Status | Workflow state changes |
+| **Work Notes** | Updates | Comments and status updates |
+
+**Key Features:**
+- **Essential field mapping** - Core incident data only, avoiding complex CMDB integrations
+- **Bidirectional sync** - Changes in either system update the other automatically  
+- **Loop prevention** - Intelligent cooldowns prevent infinite sync loops
+- **Production ready** - Docker deployment, health checks, comprehensive logging
+
 ## Features
 
 ### Forward Sync (incident.io → ServiceNow)
