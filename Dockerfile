@@ -29,13 +29,19 @@ RUN chown -R incident:nodejs /app
 # Switch to non-root user
 USER incident
 
-# Expose port
-EXPOSE 5002
+# Port is configured via PORT environment variable - no default EXPOSE
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD node -e "const http = require('http'); \
-    const req = http.request('http://localhost:5002/health', (res) => { \
+    const port = process.env.PORT; \
+    if (!port) { console.error('PORT not set'); process.exit(1); } \
+    const req = http.request({ \
+      hostname: '127.0.0.1', \
+      port: port, \
+      path: '/health', \
+      method: 'GET' \
+    }, (res) => { \
       process.exit(res.statusCode === 200 ? 0 : 1); \
     }); \
     req.on('error', () => process.exit(1)); \

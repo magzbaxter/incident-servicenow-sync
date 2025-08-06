@@ -87,8 +87,10 @@ SERVICENOW_PASSWORD=your_password
 # Webhook Configuration
 WEBHOOK_SECRET=your_webhook_secret
 
+# Server Configuration (REQUIRED)
+PORT=3000
+
 # Optional
-PORT=5002
 LOG_LEVEL=info
 ```
 
@@ -118,7 +120,7 @@ Edit `config/field-mappings.json` to customize how incident.io fields map to Ser
 npm run dev
 ```
 
-The server will start on `http://localhost:5002`.
+The server will start on the port specified in your PORT environment variable.
 
 For webhook testing, use a tunnel service:
 ```bash
@@ -126,7 +128,7 @@ For webhook testing, use a tunnel service:
 npm install -g ngrok
 
 # Create tunnel
-ngrok http 5002
+ngrok http $PORT  # Replace $PORT with your actual port number
 
 # Use the HTTPS URL for your webhook
 ```
@@ -179,7 +181,7 @@ Or visit: `http://your-domain.com/health`
 ### Test Webhook
 
 ```bash
-curl -X POST http://localhost:5002/webhook \
+curl -X POST http://localhost:$PORT/webhook \
   -H "Content-Type: application/json" \
   -H "X-Incident-Signature: sha256=test" \
   -d '{

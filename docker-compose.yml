@@ -7,23 +7,30 @@ services:
     restart: unless-stopped
     
     ports:
-      - "${PORT:-5002}:5002"
+      - "${EXTERNAL_PORT}:${PORT}"
     
     environment:
       # incident.io Configuration
       - INCIDENT_IO_API_KEY=${INCIDENT_IO_API_KEY}
       
       # ServiceNow Configuration  
+      - SERVICENOW_INSTANCE_URL=${SERVICENOW_INSTANCE_URL}
       - SERVICENOW_USERNAME=${SERVICENOW_USERNAME}
       - SERVICENOW_PASSWORD=${SERVICENOW_PASSWORD}
       
       # Webhook Configuration
       - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      - WEBHOOK_VERIFY_SIGNATURE=${WEBHOOK_VERIFY_SIGNATURE:-false}
+      - SERVICENOW_WEBHOOK_SECRET=${SERVICENOW_WEBHOOK_SECRET}
+      - SERVICENOW_WEBHOOK_VERIFY_SIGNATURE=${SERVICENOW_WEBHOOK_VERIFY_SIGNATURE:-false}
       
-      # Optional Configuration
-      - PORT=${PORT:-5002}
+      # Server Configuration
+      - PORT=${PORT}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - NODE_ENV=${NODE_ENV:-production}
+      
+      # Optional: ServiceNow Link Field
+      - SERVICENOW_LINK_FIELD_ID=${SERVICENOW_LINK_FIELD_ID}
     
     volumes:
       # Mount configuration files (optional - for easier config updates)
@@ -44,7 +51,7 @@ services:
     
     # Health check
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5002/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:${PORT}/health"]
       interval: 30s
       timeout: 10s
       retries: 3

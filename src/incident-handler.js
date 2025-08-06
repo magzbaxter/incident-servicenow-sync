@@ -7,6 +7,48 @@ class IncidentHandler {
     this.logger = logger;
     // In-memory lock to prevent duplicate processing
     this.processingIncidents = new Set();
+    // Track recent reverse sync updates to prevent loops (incident_id -> timestamp)
+    this.recentReverseSyncUpdates = new Map();
+  }
+
+  /**
+   * Track that a reverse sync update just happened for an incident
+   */
+  trackReverseSyncUpdate(incidentId) {
+    this.recentReverseSyncUpdates.set(incidentId, Date.now());
+    this.logger.debug('Tracked reverse sync update', { incident_id: incidentId });
+    
+    // Clean up old entries (older than 5 minutes)
+    const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+    for (const [id, timestamp] of this.recentReverseSyncUpdates.entries()) {
+      if (timestamp < fiveMinutesAgo) {
+        this.recentReverseSyncUpdates.delete(id);
+      }
+    }
+  }
+
+  /**
+   * Check if we should skip forward sync due to recent reverse sync
+   */
+  shouldSkipForwardSync(incidentId) {
+    const recentUpdate = this.recentReverseSyncUpdates.get(incidentId);
+    if (recentUpdate) {
+      const timeSinceUpdate = Date.now() - recentUpdate;
+      const cooldownPeriod = 30 * 1000; // 30 seconds cooldown
+      
+      if (timeSinceUpdate < cooldownPeriod) {
+        this.logger.info('Skipping forward sync due to recent reverse sync', {
+          incident_id: incidentId,
+          time_since_reverse_sync: timeSinceUpdate,
+          cooldown_period: cooldownPeriod
+        });
+        return true;
+      } else {
+        // Remove expired entry
+        this.recentReverseSyncUpdates.delete(incidentId);
+      }
+    }
+    return false;
   }
 
   /**
@@ -113,6 +155,11 @@ class IncidentHandler {
    */
   async updateIncident(incidentId, webhookPayload = null) {
     this.logger.info('Processing incident update', { incident_id: incidentId });
+
+    // Check if we should skip this update due to recent reverse sync
+    if (this.shouldSkipForwardSync(incidentId)) {
+      return null; // Skip this update to prevent sync loop
+    }
 
     try {
       // Find existing ServiceNow incident

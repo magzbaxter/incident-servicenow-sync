@@ -1,3 +1,33 @@
+/**
+ * Incident.io to ServiceNow Bidirectional Synchronization Service
+ * 
+ * This application provides real-time bidirectional synchronization between incident.io and ServiceNow:
+ * 
+ * FORWARD SYNC (incident.io → ServiceNow):
+ * - Listens for incident.io webhooks for incident creation and updates
+ * - Creates new ServiceNow incidents when incidents are created in incident.io
+ * - Updates existing ServiceNow incidents when incident.io incidents change
+ * - Maps incident.io fields (severity, status, assignments) to ServiceNow fields
+ * 
+ * REVERSE SYNC (ServiceNow → incident.io):
+ * - Receives ServiceNow webhook notifications when incidents are updated
+ * - Updates corresponding incident.io incidents with ServiceNow changes
+ * - Maps ServiceNow priority/urgency/impact to incident.io severity levels
+ * - Prevents sync loops with intelligent cooldown mechanisms
+ * 
+ * KEY FEATURES:
+ * - Configurable field mappings between systems
+ * - Loop prevention to avoid infinite sync cycles  
+ * - Comprehensive logging and error handling
+ * - Health check endpoints for monitoring
+ * - Webhook signature verification for security
+ * - Rate limiting and security hardening
+ * 
+ * CONFIGURATION:
+ * All environment-specific settings are configured via config/config.json and 
+ * config/field-mappings.json files. See the documentation for setup instructions.
+ */
+
 const express = require('express');
 const crypto = require('crypto');
 const winston = require('winston');
@@ -46,7 +76,9 @@ class App {
       this.serviceNowClient,
       this.incidentIOClient,
       this.config,
-      this.logger
+      this.logger,
+      this.fieldMapper,
+      this.incidentHandler
     );
 
     // Setup Express middleware
@@ -101,8 +133,16 @@ class App {
     }
 
     // Body parsing middleware
-    this.express.use('/webhook', express.raw({ type: 'application/json' }));
+    // Default JSON parsing
     this.express.use(express.json());
+    // Raw parsing only for the main webhook endpoint (for signature verification)
+    this.express.use('/webhook', (req, res, next) => {
+      // Skip raw parsing for servicenow webhook
+      if (req.path === '/servicenow') {
+        return next();
+      }
+      express.raw({ type: 'application/json' })(req, res, next);
+    });
 
     // Request logging
     this.express.use((req, res, next) => {
@@ -142,7 +182,17 @@ class App {
           }
         }
 
-        const payload = JSON.parse(req.body);
+        // Handle both raw buffer and parsed JSON for incident.io webhooks
+        let payload;
+        if (Buffer.isBuffer(req.body)) {
+          payload = JSON.parse(req.body.toString());
+        } else if (typeof req.body === 'object') {
+          payload = req.body;
+        } else if (typeof req.body === 'string') {
+          payload = JSON.parse(req.body);
+        } else {
+          throw new Error('Unexpected webhook payload format');
+        }
         this.logger.info('Received webhook', { 
           event_type: payload.event_type,
           incident_id: payload.data?.incident?.id 
@@ -186,8 +236,11 @@ class App {
     });
 
     // ServiceNow webhook endpoint for reverse sync
+    this.logger.info('Registering ServiceNow webhook route at /webhook/servicenow');
     this.express.post('/webhook/servicenow', async (req, res) => {
       try {
+        this.logger.info('ServiceNow webhook handler started');
+        
         // Verify ServiceNow signature if enabled
         if (this.config.servicenow_webhook?.verify_signature && this.config.servicenow_webhook?.secret) {
           if (!this.verifyServiceNowSignature(req)) {
@@ -196,17 +249,54 @@ class App {
           }
         }
 
-        const payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+        // Handle both raw buffer and parsed JSON
+        let payload;
+        if (Buffer.isBuffer(req.body)) {
+          try {
+            payload = JSON.parse(req.body.toString());
+            this.logger.info('Parsed ServiceNow webhook from buffer', {
+              buffer_length: req.body.length,
+              parsed_keys: Object.keys(payload)
+            });
+          } catch (e) {
+            this.logger.error('Failed to parse ServiceNow webhook buffer', {
+              error: e.message,
+              buffer_content: req.body.toString().substring(0, 100)
+            });
+            return res.status(400).json({ error: 'Invalid JSON payload' });
+          }
+        } else if (typeof req.body === 'object') {
+          payload = req.body;
+          this.logger.info('ServiceNow webhook already parsed as object', {
+            payload_keys: Object.keys(payload)
+          });
+        } else {
+          this.logger.error('ServiceNow webhook unexpected body type', {
+            body_type: typeof req.body,
+            body_content: req.body
+          });
+          return res.status(400).json({ error: 'Unexpected payload format' });
+        }
         this.logger.info('Received ServiceNow webhook', { 
           sys_id: payload.sys_id,
           table: payload.table,
           operation: payload.operation,
-          updated_fields: payload.updated_fields
+          updated_fields: payload.updated_fields,
+          expected_table: this.config.servicenow.table || 'incident',
+          table_comparison: payload.table === (this.config.servicenow.table || 'incident'),
+          table_types: {
+            payload_table_type: typeof payload.table,
+            config_table_type: typeof (this.config.servicenow.table || 'incident')
+          },
+          payload_keys: Object.keys(payload || {})
         });
 
         // Only process incident table updates
         if (payload.table !== (this.config.servicenow.table || 'incident')) {
-          this.logger.debug('Ignoring non-incident table update', { table: payload.table });
+          this.logger.debug('Ignoring non-incident table update', { 
+            received_table: payload.table,
+            expected_table: this.config.servicenow.table || 'incident'
+          });
           return res.status(200).json({ success: true, message: 'Ignored non-incident update' });
         }
 
@@ -233,28 +323,34 @@ class App {
       }
     });
 
-    // Manual reverse sync endpoint for testing
-    this.express.post('/sync/servicenow/:sysId', async (req, res) => {
-      try {
-        const { sysId } = req.params;
-        const { updated_fields = [], old_values = {} } = req.body;
+    // Manual sync endpoints for administrative purposes
+    // These endpoints can be used for troubleshooting or manual synchronization
+    // when needed, but should be secured in production environments
+    
+    if (this.config.features?.enable_manual_sync_endpoints) {
+      // Manual reverse sync endpoint - triggers sync from ServiceNow to incident.io
+      this.express.post('/sync/servicenow/:sysId', async (req, res) => {
+        try {
+          const { sysId } = req.params;
+          const { updated_fields = [], old_values = {} } = req.body;
 
-        this.logger.info('Manual reverse sync requested', { 
-          sys_id: sysId,
-          updated_fields
-        });
+          this.logger.info('Manual reverse sync requested', { 
+            sys_id: sysId,
+            updated_fields
+          });
 
-        await this.reverseSyncHandler.handleServiceNowUpdate(sysId, updated_fields, old_values);
+          await this.reverseSyncHandler.handleServiceNowUpdate(sysId, updated_fields, old_values);
 
-        res.json({ success: true, message: 'Reverse sync completed' });
-      } catch (error) {
-        this.logger.error('Manual reverse sync error', { 
-          error: error.message,
-          sysId: req.params.sysId 
-        });
-        res.status(500).json({ error: error.message });
-      }
-    });
+          res.json({ success: true, message: 'Reverse sync completed' });
+        } catch (error) {
+          this.logger.error('Manual reverse sync error', { 
+            error: error.message,
+            sysId: req.params.sysId 
+          });
+          res.status(500).json({ error: error.message });
+        }
+      });
+    }
   }
 
   verifyWebhookSignature(req) {
@@ -396,7 +492,10 @@ class App {
   async start() {
     await this.initialize();
     
-    const port = this.config.webhook.port || 5002;
+    const port = process.env.PORT || this.config.webhook.port;
+    if (!port) {
+      throw new Error('PORT environment variable or webhook.port configuration must be set');
+    }
     this.server = this.express.listen(port, () => {
       this.logger.info(`Server started on port ${port}`);
     });

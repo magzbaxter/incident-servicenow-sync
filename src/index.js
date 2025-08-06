@@ -48,7 +48,7 @@ async function main() {
       console.log('\n📋 Configuration Summary:');
       console.log(`   ServiceNow: ${app.config.servicenow?.instance_url}`);
       console.log(`   incident.io: ${app.config.incident_io?.api_url}`);
-      console.log(`   Webhook port: ${app.config.webhook?.port || 5002}`);
+      console.log(`   Webhook port: ${process.env.PORT || app.config.webhook?.port || 'NOT CONFIGURED'}`);
       console.log(`   Features: ${JSON.stringify(app.config.features)}`);
     }
 
@@ -118,11 +118,15 @@ Options:
 
 Environment Variables:
   INCIDENT_IO_API_KEY     incident.io API key (required)
+  SERVICENOW_INSTANCE_URL ServiceNow instance URL (required)
   SERVICENOW_USERNAME     ServiceNow username (required)
   SERVICENOW_PASSWORD     ServiceNow password (required)
-  WEBHOOK_SECRET          Webhook signature secret (required)
-  PORT                    HTTP server port (default: 5002)
-  LOG_LEVEL              Logging level (default: info)
+  PORT                    HTTP server port (required)
+  WEBHOOK_SECRET          incident.io webhook secret (optional)
+  WEBHOOK_VERIFY_SIGNATURE Enable incident.io webhook verification (optional)
+  SERVICENOW_WEBHOOK_SECRET ServiceNow webhook secret (optional)
+  SERVICENOW_WEBHOOK_VERIFY_SIGNATURE ServiceNow webhook verification (optional)
+  LOG_LEVEL              Logging level (optional, default: info)
 
 Configuration Files:
   config/config.json          Main configuration

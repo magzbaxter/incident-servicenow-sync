@@ -1,4 +1,19 @@
 {
+  "_comments": {
+    "description": "Field Mappings Configuration for incident.io ↔ ServiceNow Synchronization",
+    "sections": {
+      "incident_creation": "Maps incident.io incident fields to ServiceNow fields when creating new incidents",
+      "incident_updates": "Maps incident.io incident fields to ServiceNow fields when updating existing incidents", 
+      "reverse_mappings": "Maps ServiceNow field values to incident.io values for reverse synchronization",
+      "validation_rules": "Defines field validation requirements and constraints"
+    },
+    "important_notes": [
+      "All incident.io severity/status UUIDs must match your organization's configuration",
+      "ServiceNow field names should match your ServiceNow table schema",
+      "User and reference lookups require the target records to exist in ServiceNow",
+      "Field mapping types: text, choice_mapping, reference_lookup, user_lookup, expression"
+    ]
+  },
   "incident_creation": {
     "short_description": {
       "source": "incident.name",
@@ -37,25 +52,25 @@
       "description": "Map first affected service to configuration item"
     },
     "urgency": {
-      "source": "incident.severity",
+      "source": "incident.severity.name",
       "type": "choice_mapping",
       "mappings": {
-        "critical": "1",
-        "high": "2", 
-        "medium": "3",
-        "low": "3"
+        "Critical": "1",
+        "Major": "2", 
+        "Minor": "3",
+        "Low": "3"
       },
       "fallback": "3",
       "description": "Map incident.io severity to ServiceNow urgency"
     },
     "impact": {
-      "source": "incident.severity",
+      "source": "incident.severity.name",
       "type": "choice_mapping",
       "mappings": {
-        "critical": "1",
-        "high": "2",
-        "medium": "3", 
-        "low": "3"
+        "Critical": "1",
+        "Major": "2",
+        "Minor": "3", 
+        "Low": "3"
       },
       "fallback": "3",
       "description": "Map incident.io severity to ServiceNow impact"
@@ -112,9 +127,14 @@
         "Triage": "1",
         "Investigating": "2",
         "Fixing": "2",
-        "Monitoring": "3", 
-        "Resolved": "6",
-        "Closed": "7"
+        "Monitoring": "3",
+        "Paused": "3",
+        "Documenting": "6", 
+        "Reviewing": "6",
+        "Closed": "7",
+        "Canceled": "8",
+        "Declined": "8",
+        "Merged": "7"
       },
       "fallback": "2",
       "description": "Map incident.io status to ServiceNow incident_state"
@@ -170,20 +190,33 @@
     }
   },
   "reverse_mappings": {
+    "_comments": {
+      "description": "Maps ServiceNow values to incident.io for reverse synchronization (ServiceNow → incident.io)",
+      "status_mapping": "Maps ServiceNow incident_state values to incident.io status IDs",
+      "severity_mapping": "Maps ServiceNow priority values (1-5) to incident.io severity UUIDs",
+      "important": "REPLACE THE UUIDs BELOW WITH YOUR ORGANIZATION'S ACTUAL incident.io SEVERITY UUIDs"
+    },
     "status": {
-      "1": "open",
-      "2": "open", 
-      "3": "open",
-      "6": "closed",
-      "7": "closed",
-      "8": "closed"
+      "_comment": "Maps ServiceNow incident_state to incident.io status IDs (WORKFLOW COMPLIANT ONLY)",
+      "1": "01JT3NNT3D4J0DDWS19MQYF0RC",  
+      "2": "01JT3NNT3D4J0DDWS19MQYF0RC", 
+      "3": "01JT3NNT3D455EB53SWJHK1QST",  
+      "6": "01JT3NNT3D73EK2RXFW4GJY310",  
+      "7": "01JT3NNT3D73EK2RXFW4GJY310",  
+      "8": "01JT3NNT3D73EK2RXFW4GJY310"   
     },
     "severity": {
-      "1": "critical",
-      "2": "major",
-      "3": "minor",
-      "4": "minor",
-      "5": "minor"
+      "_comments": {
+        "priority_1": "Critical priority → Critical severity UUID",
+        "priority_2": "High priority → Major severity UUID", 
+        "priority_3_5": "Medium/Low/Planning priority → Minor severity UUID",
+        "how_to_find_uuids": "Get these from your incident.io organization's severity catalog API"
+      },
+      "1": "01JT3NNT3DH019S8XA0D9YGJEF",
+      "2": "01JT3NNT3DTF8D9ZS7QZPFM9QM", 
+      "3": "01JT3NNT3DW44F1KGJ68WDV9R6",
+      "4": "01JT3NNT3DW44F1KGJ68WDV9R6",
+      "5": "01JT3NNT3DW44F1KGJ68WDV9R6"
     }
   },
   "validation_rules": {

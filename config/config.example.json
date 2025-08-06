@@ -1,6 +1,6 @@
 {
   "servicenow": {
-    "instance_url": "https://your-instance.service-now.com",
+    "instance_url": "${SERVICENOW_INSTANCE_URL}",
     "table": "incident",
     "incident_id_field": "u_incident_io_id",
     "auth": {
@@ -17,20 +17,22 @@
     "api_key": "${INCIDENT_IO_API_KEY}",
     "api_timeout": 30000,
     "retry_attempts": 3,
-    "retry_delay": 1000
+    "retry_delay": 1000,
+    "servicenow_link_field_id": "${SERVICENOW_LINK_FIELD_ID}",
+    "servicenow_instance_url": "${SERVICENOW_INSTANCE_URL}"
   },
   "webhook": {
-    "port": 5002,
+    "port": "${PORT}",
     "path": "/webhook",
-    "verify_signature": true,
+    "verify_signature": "${WEBHOOK_VERIFY_SIGNATURE}",
     "secret": "${WEBHOOK_SECRET}"
   },
   "servicenow_webhook": {
-    "verify_signature": false,
+    "verify_signature": "${SERVICENOW_WEBHOOK_VERIFY_SIGNATURE}",
     "secret": "${SERVICENOW_WEBHOOK_SECRET}"
   },
   "logging": {
-    "level": "info",
+    "level": "${LOG_LEVEL}",
     "format": "json",
     "file": "logs/app.log"
   },
@@ -40,8 +42,10 @@
     "deduplicate_work_notes": true,
     "sync_attachments": false,
     "reverse_sync": true,
-    "sync_status": false,
-    "sync_severity": false
+    "sync_status": true,
+    "sync_severity": true,
+    "add_servicenow_link": false,
+    "enable_manual_sync_endpoints": false
   },
   "performance": {
     "concurrent_requests": 5,

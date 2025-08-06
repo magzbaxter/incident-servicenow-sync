@@ -1,13 +1,40 @@
 /**
- * Handles synchronization from ServiceNow to incident.io
- * This is triggered when ServiceNow incidents are updated
+ * ServiceNow to incident.io Reverse Synchronization Handler
+ * 
+ * This class handles the synchronization of incident updates from ServiceNow to incident.io.
+ * It processes ServiceNow webhook notifications and applies corresponding updates to incident.io incidents.
+ * 
+ * KEY RESPONSIBILITIES:
+ * - Process ServiceNow incident update notifications
+ * - Map ServiceNow field changes to incident.io format
+ * - Handle priority/urgency/impact to severity mapping
+ * - Prevent synchronization loops with cooldown mechanisms
+ * - Support bulk update operations with rate limiting
+ * 
+ * FIELD MAPPINGS:
+ * - ServiceNow priority (1-5) → incident.io severity (Critical/Major/Minor)
+ * - ServiceNow incident_state → incident.io status (workflow-compliant only)
+ * - ServiceNow short_description → incident.io name  
+ * - ServiceNow description → incident.io summary
+ * - ServiceNow work_notes → incident.io updates/comments
+ * 
+ * STATUS MAPPING LIMITATIONS:
+ * incident.io enforces workflow rules that only allow transitions between "live" statuses
+ * (Investigating, Fixing, Monitoring). Transitions to Triage, Paused, Closed, etc. are blocked
+ * by the platform. The mapping uses the closest allowed status for each ServiceNow state.
+ * 
+ * CONFIGURATION:
+ * All field mappings are configured in config/field-mappings.json under the
+ * "reverse_mappings" section. Severity UUIDs must match your incident.io organization.
  */
 class ReverseSyncHandler {
-  constructor(serviceNowClient, incidentIOClient, config, logger) {
+  constructor(serviceNowClient, incidentIOClient, config, logger, fieldMapper = null, incidentHandler = null) {
     this.serviceNowClient = serviceNowClient;
     this.incidentIOClient = incidentIOClient;
     this.config = config;
     this.logger = logger;
+    this.fieldMapper = fieldMapper;
+    this.incidentHandler = incidentHandler;
     
     // Track processing to prevent loops
     this.processingUpdates = new Set();
@@ -72,6 +99,11 @@ class ReverseSyncHandler {
         updated_fields: Object.keys(incidentIOUpdates)
       });
 
+      // Track this reverse sync to prevent forward sync loops
+      if (this.incidentHandler) {
+        this.incidentHandler.trackReverseSyncUpdate(incidentIOId);
+      }
+
     } catch (error) {
       this.logger.error('Failed to sync ServiceNow changes to incident.io', {
         sys_id: sysId,
@@ -131,23 +163,41 @@ class ReverseSyncHandler {
     if (this.config.features?.sync_status && updatedFields.includes('incident_state')) {
       const incidentIOStatus = this.mapServiceNowStatusToIncidentIO(serviceNowIncident.incident_state);
       if (incidentIOStatus) {
-        updates.status = incidentIOStatus;
-        this.logger.debug('Mapping incident_state to incident.io status', {
+        // incident.io API for /actions/edit expects incident_status_id as a string
+        updates.incident_status_id = incidentIOStatus.id;
+        this.logger.info('Mapping incident_state to incident.io status', {
           servicenow_state: serviceNowIncident.incident_state,
-          incident_io_status: incidentIOStatus
+          incident_io_status: incidentIOStatus,
+          incident_status_id: incidentIOStatus.id,
+          status_object: JSON.stringify(incidentIOStatus)
         });
       }
     }
 
-    // Map priority/severity changes (if configured)
-    if (this.config.features?.sync_severity && updatedFields.includes('priority')) {
-      const incidentIOSeverity = this.mapServiceNowPriorityToIncidentIO(serviceNowIncident.priority);
-      if (incidentIOSeverity) {
-        updates.severity = incidentIOSeverity;
-        this.logger.debug('Mapping priority to incident.io severity', {
-          servicenow_priority: serviceNowIncident.priority,
-          incident_io_severity: incidentIOSeverity
-        });
+    // Map urgency/impact to severity changes (if configured)
+    if (this.config.features?.sync_severity && 
+        (updatedFields.includes('urgency') || updatedFields.includes('impact') || updatedFields.includes('priority'))) {
+      
+      // Use priority if available, otherwise calculate from urgency/impact
+      let priorityValue = serviceNowIncident.priority;
+      if (!priorityValue && serviceNowIncident.urgency && serviceNowIncident.impact) {
+        // ServiceNow typically calculates priority as min(urgency, impact)
+        priorityValue = Math.min(parseInt(serviceNowIncident.urgency), parseInt(serviceNowIncident.impact)).toString();
+      }
+      
+      if (priorityValue) {
+        const incidentIOSeverity = this.mapServiceNowPriorityToIncidentIO(priorityValue);
+        if (incidentIOSeverity) {
+          // incident.io API expects severity_id as a string, not severity as an object
+          updates.severity_id = incidentIOSeverity.id;
+          this.logger.info('Mapping urgency/impact/priority to incident.io severity', {
+            servicenow_urgency: serviceNowIncident.urgency,
+            servicenow_impact: serviceNowIncident.impact,
+            servicenow_priority: priorityValue,
+            incident_io_severity: incidentIOSeverity,
+            severity_object: JSON.stringify(incidentIOSeverity)
+          });
+        }
       }
     }
 
@@ -169,7 +219,7 @@ class ReverseSyncHandler {
     // Handle adding updates/comments separately
     if (updates.add_update) {
       const updateOptions = {};
-      if (updates.status) updateOptions.status = updates.status;
+      if (updates.incident_status) updateOptions.status = updates.incident_status;
       if (updates.severity) updateOptions.severity = updates.severity;
 
       await this.incidentIOClient.addIncidentUpdate(
@@ -198,46 +248,82 @@ class ReverseSyncHandler {
   }
 
   /**
-   * Map ServiceNow incident state to incident.io status
+   * Map ServiceNow incident state to incident.io status object
    */
   mapServiceNowStatusToIncidentIO(serviceNowState) {
-    // Default ServiceNow incident states mapping
+    // Only use transitions that are ALLOWED by incident.io workflow rules
+    // incident.io only allows transitions between "live" category statuses
     const statusMapping = {
-      '1': 'open',      // New
-      '2': 'open',      // In Progress  
-      '3': 'open',      // On Hold
-      '6': 'closed',    // Resolved
-      '7': 'closed',    // Closed
-      '8': 'closed'     // Canceled
+      '1': { id: '01JT3NNT3D4J0DDWS19MQYF0RC' },   // New -> Investigating (can't use Triage)
+      '2': { id: '01JT3NNT3D4J0DDWS19MQYF0RC' },   // In Progress -> Investigating  
+      '3': { id: '01JT3NNT3D455EB53SWJHK1QST' },   // On Hold -> Monitoring (closest to paused)
+      '6': { id: '01JT3NNT3D73EK2RXFW4GJY310' },   // Resolved -> Fixing (can't use Closed)
+      '7': { id: '01JT3NNT3D73EK2RXFW4GJY310' },   // Closed -> Fixing (can't use Closed)
+      '8': { id: '01JT3NNT3D73EK2RXFW4GJY310' }    // Canceled -> Fixing (can't use Canceled)
     };
 
-    // Allow custom mapping from config
-    if (this.config.reverse_mappings?.status) {
-      return this.config.reverse_mappings.status[serviceNowState] || statusMapping[serviceNowState];
+    // Use field mapper's reverse mappings if available
+    if (this.fieldMapper?.mappingsConfig?.reverse_mappings?.status) {
+      const statusId = this.fieldMapper.mappingsConfig.reverse_mappings.status[serviceNowState];
+      return statusId ? { id: statusId } : statusMapping[serviceNowState];
     }
 
     return statusMapping[serviceNowState];
   }
 
   /**
-   * Map ServiceNow priority to incident.io severity
+   * Map ServiceNow priority to incident.io severity object
+   * 
+   * This method maps ServiceNow priority values (1-5) to incident.io severity UUIDs.
+   * The mapping is configured in config/field-mappings.json under "reverse_mappings.severity"
+   * 
+   * MAPPING CONFIGURATION:
+   * - Priority 1 (Critical) → Critical severity UUID
+   * - Priority 2 (High) → Major severity UUID  
+   * - Priority 3-5 (Medium/Low/Planning) → Minor severity UUID
+   * 
+   * SETUP INSTRUCTIONS:
+   * 1. The severity UUIDs in field-mappings.json must match your incident.io organization
+   * 2. You can find your organization's severity UUIDs via the incident.io catalog API
+   * 3. See the field-mappings.json file for the current configured mappings
    */
   mapServiceNowPriorityToIncidentIO(serviceNowPriority) {
-    // Default ServiceNow priority to incident.io severity mapping
-    const severityMapping = {
-      '1': 'critical',   // Critical
-      '2': 'major',      // High
-      '3': 'minor',      // Moderate
-      '4': 'minor',      // Low
-      '5': 'minor'       // Planning
-    };
 
-    // Allow custom mapping from config
-    if (this.config.reverse_mappings?.severity) {
-      return this.config.reverse_mappings.severity[serviceNowPriority] || severityMapping[serviceNowPriority];
+    // Use configured mappings from field-mappings.json if available
+    if (this.fieldMapper?.mappingsConfig?.reverse_mappings?.severity) {
+      const severityId = this.fieldMapper.mappingsConfig.reverse_mappings.severity[serviceNowPriority];
+      if (severityId) {
+        const mappedSeverity = { id: severityId };
+        
+        this.logger.debug('ServiceNow priority mapped to incident.io severity', {
+          servicenow_priority: serviceNowPriority,
+          incident_io_severity_id: severityId,
+          mapping_source: 'field_mappings_config'
+        });
+        
+        return mappedSeverity;
+      }
     }
 
-    return severityMapping[serviceNowPriority];
+    // Fallback to default mapping
+    const mappedSeverity = defaultSeverityMapping[serviceNowPriority];
+    
+    if (!mappedSeverity) {
+      this.logger.warn('No severity mapping found for ServiceNow priority', {
+        servicenow_priority: serviceNowPriority,
+        available_priorities: Object.keys(defaultSeverityMapping),
+        mapping_note: 'Please configure severity mappings in config/field-mappings.json'
+      });
+      return null;
+    }
+
+    this.logger.debug('ServiceNow priority mapped to incident.io severity', {
+      servicenow_priority: serviceNowPriority,
+      incident_io_severity_id: mappedSeverity.id,
+      mapping_source: 'default_fallback'
+    });
+
+    return mappedSeverity;
   }
 
   /**

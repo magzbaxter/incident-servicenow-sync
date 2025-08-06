@@ -203,7 +203,10 @@ class IncidentIOClient {
    */
   async getSeverities() {
     try {
-      this.logger.debug('Fetching severities from incident.io');
+      this.logger.debug('Fetching severities from incident.io', {
+        base_url: this.baseURL,
+        full_url: this.baseURL + '/severities'
+      });
       
       const response = await this.client.get('/severities');
       
@@ -214,6 +217,29 @@ class IncidentIOClient {
       return response.data.severities || [];
     } catch (error) {
       this.logger.error('Failed to fetch severities from incident.io', {
+        error: error.message,
+        status: error.response?.status
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get incident statuses
+   */
+  async getIncidentStatuses() {
+    try {
+      this.logger.debug('Fetching incident statuses from incident.io');
+      
+      const response = await this.client.get('/incident_statuses');
+      
+      this.logger.debug('Successfully fetched incident statuses', {
+        count: response.data.incident_statuses?.length || 0
+      });
+
+      return response.data.incident_statuses || [];
+    } catch (error) {
+      this.logger.error('Failed to fetch incident statuses from incident.io', {
         error: error.message,
         status: error.response?.status
       });
@@ -362,7 +388,11 @@ class IncidentIOClient {
         fields: Object.keys(updateData)
       });
       
-      const response = await this.client.patch(`/incidents/${incidentId}`, updateData);
+      // incident.io requires updates via the /actions/edit endpoint
+      const response = await this.client.post(`/incidents/${incidentId}/actions/edit`, {
+        incident: updateData,
+        notify_incident_channel: false
+      });
       
       this.logger.info('Successfully updated incident in incident.io', {
         incident_id: incidentId,
@@ -531,15 +561,30 @@ class IncidentIOClient {
 
   /**
    * Add ServiceNow link to incident custom field
+   * 
+   * IMPORTANT: This method contains environment-specific values that should be configured:
+   * - customFieldId: The UUID of your incident.io custom field for ServiceNow links
+   * - ServiceNow URL: Should match your ServiceNow instance URL
    */
-  async addServiceNowLink(incidentId, serviceNowIncident, customFieldId = "01K0WGCNQDEP3RCKDF4PS7X3QS") {
+  async addServiceNowLink(incidentId, serviceNowIncident, customFieldId = null) {
     try {
-      const serviceNowUrl = `https://dev304703.service-now.com/now/nav/ui/classic/params/target/incident.do%3Fsys_id%3D${serviceNowIncident.sys_id}`;
+      // Use configured custom field ID or fall back to environment-specific default
+      const fieldId = customFieldId || this.config.servicenow_link_field_id;
+      if (!fieldId) {
+        throw new Error('ServiceNow link custom field ID not configured. Please set servicenow_link_field_id in config.');
+      }
+
+      // Build ServiceNow URL using configured instance URL
+      const baseUrl = this.config.servicenow_instance_url;
+      if (!baseUrl) {
+        throw new Error('ServiceNow instance URL not configured. Please set SERVICENOW_INSTANCE_URL environment variable.');
+      }
+      const serviceNowUrl = `${baseUrl}/now/nav/ui/classic/params/target/incident.do%3Fsys_id%3D${serviceNowIncident.sys_id}`;
       
       const customFieldEntries = [{
-        custom_field_id: customFieldId,
+        custom_field_id: fieldId,
         values: [{
-          id: customFieldId,
+          id: fieldId,
           value_link: serviceNowUrl
         }]
       }];
@@ -547,7 +592,8 @@ class IncidentIOClient {
       this.logger.info('Adding ServiceNow link to incident', { 
         incident_id: incidentId,
         servicenow_number: serviceNowIncident.number,
-        servicenow_url: serviceNowUrl
+        servicenow_url: serviceNowUrl,
+        custom_field_id: fieldId
       });
 
       return await this.updateIncidentCustomFields(incidentId, customFieldEntries, true);

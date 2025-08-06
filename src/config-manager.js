@@ -111,9 +111,10 @@ class ConfigManager {
   isRequiredEnvVar(varName) {
     const requiredVars = [
       'INCIDENT_IO_API_KEY',
+      'SERVICENOW_INSTANCE_URL',
       'SERVICENOW_USERNAME', 
       'SERVICENOW_PASSWORD',
-      'WEBHOOK_SECRET'
+      'PORT'
     ];
     return requiredVars.includes(varName);
   }
@@ -128,14 +129,14 @@ class ConfigManager {
     if (!this.config.servicenow) {
       errors.push('ServiceNow configuration is missing');
     } else {
-      if (!this.config.servicenow.instance_url) {
-        errors.push('ServiceNow instance_url is required');
+      if (!this.config.servicenow.instance_url || this.config.servicenow.instance_url.includes('${')) {
+        errors.push('ServiceNow instance_url is required (check SERVICENOW_INSTANCE_URL environment variable)');
       }
-      if (!this.config.servicenow.auth?.username) {
-        errors.push('ServiceNow username is required');
+      if (!this.config.servicenow.auth?.username || this.config.servicenow.auth.username.includes('${')) {
+        errors.push('ServiceNow username is required (check SERVICENOW_USERNAME environment variable)');
       }
-      if (!this.config.servicenow.auth?.password) {
-        errors.push('ServiceNow password is required');
+      if (!this.config.servicenow.auth?.password || this.config.servicenow.auth.password.includes('${')) {
+        errors.push('ServiceNow password is required (check SERVICENOW_PASSWORD environment variable)');
       }
     }
 
@@ -143,8 +144,18 @@ class ConfigManager {
     if (!this.config.incident_io) {
       errors.push('Incident.io configuration is missing');
     } else {
-      if (!this.config.incident_io.api_key) {
-        errors.push('Incident.io API key is required');
+      if (!this.config.incident_io.api_key || this.config.incident_io.api_key.includes('${')) {
+        errors.push('Incident.io API key is required (check INCIDENT_IO_API_KEY environment variable)');
+      }
+      
+      // Validate ServiceNow link configuration if feature is enabled
+      if (this.config.features?.add_servicenow_link) {
+        if (!this.config.incident_io.servicenow_link_field_id || this.config.incident_io.servicenow_link_field_id.includes('${')) {
+          errors.push('ServiceNow link field ID is required when add_servicenow_link is enabled (check SERVICENOW_LINK_FIELD_ID environment variable)');
+        }
+        if (!this.config.incident_io.servicenow_instance_url || this.config.incident_io.servicenow_instance_url.includes('${')) {
+          errors.push('ServiceNow instance URL is required when add_servicenow_link is enabled (check SERVICENOW_INSTANCE_URL environment variable)');
+        }
       }
     }
 
@@ -152,8 +163,11 @@ class ConfigManager {
     if (!this.config.webhook) {
       errors.push('Webhook configuration is missing');
     } else {
-      if (this.config.webhook.verify_signature && !this.config.webhook.secret) {
-        errors.push('Webhook secret is required when signature verification is enabled');
+      if (!this.config.webhook.port || this.config.webhook.port.includes('${')) {
+        errors.push('Webhook port is required (check PORT environment variable)');
+      }
+      if (this.config.webhook.verify_signature && (!this.config.webhook.secret || this.config.webhook.secret.includes('${'))) {
+        errors.push('Webhook secret is required when signature verification is enabled (check WEBHOOK_SECRET environment variable)');
       }
     }
 
@@ -397,7 +411,7 @@ SERVICENOW_PASSWORD=your_servicenow_password
 WEBHOOK_SECRET=your_webhook_secret_for_signature_verification
 
 # Optional: Override default values
-# WEBHOOK_PORT=5002
+# PORT=3000
 # LOG_LEVEL=info`;
   }
 }

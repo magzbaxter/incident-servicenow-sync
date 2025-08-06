@@ -134,7 +134,7 @@ See [ServiceNow Business Rules Setup](./servicenow-business-rules.md) for detail
 Test reverse sync manually:
 
 ```bash
-curl -X POST http://localhost:5002/sync/servicenow/abc123 \
+curl -X POST http://localhost:$PORT/sync/servicenow/abc123 \
   -H "Content-Type: application/json" \
   -d '{
     "updated_fields": ["short_description", "description"],
@@ -194,7 +194,7 @@ Set appropriate log levels in your configuration:
 Check integration health:
 
 ```bash
-curl http://localhost:5002/health
+curl http://localhost:$PORT/health
 ```
 
 ## Error Handling
