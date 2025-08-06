@@ -2,7 +2,7 @@
   "_comments": {
     "description": "Minimal Field Mappings Configuration for incident.io ↔ ServiceNow Synchronization",
     "purpose": "This configuration contains only the essential field mappings needed for basic bidirectional sync",
-    "customization": "Add additional mappings from field-mappings.full.json as needed for your environment",
+    "customization": "Add additional field mappings as needed for your specific environment",
     "sections": {
       "incident_creation": "Core fields needed when creating ServiceNow incidents from incident.io",
       "incident_updates": "Core fields synced when incident.io incidents are updated", 
