@@ -112,6 +112,12 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
   https://api.incident.io/v1/severities
 ```
 
+**Field Mapping Configuration Options:**
+- **`config/field-mappings.json`** - Minimal configuration with only essential fields (recommended for most customers)
+- **`config/field-mappings.full.json`** - Complete configuration with all available field mappings (use as reference to add custom mappings)
+
+The default configuration includes only the core fields needed for bidirectional sync. Add additional mappings from the full configuration file as needed for your specific environment.
+
 ### 5. Choose Your Deployment Method
 
 ## Option A: Docker Deployment (Recommended)

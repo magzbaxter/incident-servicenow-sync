@@ -1,21 +1,19 @@
 {
   "_comments": {
-    "description": "Minimal Field Mappings Configuration for incident.io ↔ ServiceNow Synchronization",
-    "purpose": "This configuration contains only the essential field mappings needed for basic bidirectional sync",
-    "customization": "Add additional mappings from field-mappings.full.json as needed for your environment",
+    "description": "Field Mappings Configuration for incident.io ↔ ServiceNow Synchronization",
     "sections": {
-      "incident_creation": "Core fields needed when creating ServiceNow incidents from incident.io",
-      "incident_updates": "Core fields synced when incident.io incidents are updated", 
-      "reverse_mappings": "CRITICAL - Maps ServiceNow changes back to incident.io",
-      "validation_rules": "Basic validation requirements"
+      "incident_creation": "Maps incident.io incident fields to ServiceNow fields when creating new incidents",
+      "incident_updates": "Maps incident.io incident fields to ServiceNow fields when updating existing incidents", 
+      "reverse_mappings": "Maps ServiceNow field values to incident.io values for reverse synchronization",
+      "validation_rules": "Defines field validation requirements and constraints"
     },
     "important_notes": [
-      "REQUIRED: Update severity UUIDs to match your incident.io organization",
-      "REQUIRED: Ensure u_incident_io_id custom field exists in ServiceNow",
-      "Optional: Add user/service mappings if your environment supports them"
+      "All incident.io severity/status UUIDs must match your organization's configuration",
+      "ServiceNow field names should match your ServiceNow table schema",
+      "User and reference lookups require the target records to exist in ServiceNow",
+      "Field mapping types: text, choice_mapping, reference_lookup, user_lookup, expression"
     ]
   },
-  
   "incident_creation": {
     "short_description": {
       "source": "incident.name",
@@ -28,6 +26,30 @@
       "type": "text",
       "fallback": "No summary provided",
       "description": "Maps incident.io summary to ServiceNow description"
+    },
+    "assigned_to": {
+      "source": "incident.incident_lead.name",
+      "type": "user_lookup",
+      "lookup_field": "name",
+      "lookup_table": "sys_user",
+      "fallback": null,
+      "description": "Look up ServiceNow user by name from incident.io incident lead"
+    },
+    "service": {
+      "source": "incident.incident_type.name",
+      "type": "reference_lookup",
+      "lookup_table": "cmdb_ci_service",
+      "lookup_field": "name",
+      "fallback": null,
+      "description": "Look up ServiceNow service record by name from incident.io incident type"
+    },
+    "configuration_item": {
+      "source": "incident.affected_services[0].name",
+      "type": "reference_lookup",
+      "lookup_table": "cmdb_ci",
+      "lookup_field": "name",
+      "fallback": null,
+      "description": "Map first affected service to configuration item"
     },
     "urgency": {
       "source": "incident.severity.name",
@@ -53,19 +75,33 @@
       "fallback": "3",
       "description": "Map incident.io severity to ServiceNow impact"
     },
+    "caller_id": {
+      "source": "incident.creator.name",
+      "type": "user_lookup",
+      "lookup_field": "name",
+      "lookup_table": "sys_user",
+      "fallback": null,
+      "description": "Look up ServiceNow user by name from incident.io creator"
+    },
     "u_incident_io_id": {
       "source": "incident.id",
       "type": "text",
       "required": true,
-      "description": "CRITICAL: Store incident.io ID for bidirectional sync tracking"
+      "description": "Store incident.io ID for tracking"
     },
     "u_incident_io_url": {
       "source": "incident.permalink",
       "type": "text",
-      "description": "Store incident.io permalink for easy user navigation"
+      "description": "Store incident.io permalink for easy access"
+    },
+    "category": {
+      "source": "incident.incident_type.name",
+      "type": "expression",
+      "expression": "value.toLowerCase().includes('security') ? 'Security' : 'Software'",
+      "fallback": "Software",
+      "description": "Categorize based on incident type using expression"
     }
   },
-  
   "incident_updates": {
     "short_description": {
       "source": "incident.name",
@@ -124,12 +160,38 @@
       },
       "fallback": "3",
       "description": "Map incident.io severity to ServiceNow impact"
+    },
+    "close_code": {
+      "source": "incident.incident_status.category",
+      "type": "choice_mapping",
+      "mappings": {
+        "resolved": "Workaround provided",
+        "closed": "Solution provided"
+      },
+      "condition": "incident.incident_status.category === 'resolved' || incident.incident_status.category === 'closed'",
+      "fallback": "Solution provided",
+      "description": "Set close code when incident is resolved/closed"
+    },
+    "close_notes": {
+      "source": "incident.postmortem_document_url",
+      "type": "expression", 
+      "expression": "value ? `Post-mortem available: ${value}` : 'Incident resolved via incident.io integration'",
+      "condition": "incident.incident_status.category === 'closed'",
+      "fallback": "Incident resolved via incident.io integration",
+      "description": "Add close notes when incident is closed"
     }
   },
-  
+  "custom_mappings": {
+    "priority_calculation": {
+      "description": "Calculate priority based on urgency and impact",
+      "type": "expression",
+      "expression": "Math.min(urgency, impact)",
+      "depends_on": ["urgency", "impact"]
+    }
+  },
   "reverse_mappings": {
     "_comments": {
-      "description": "CRITICAL - Maps ServiceNow values to incident.io for reverse synchronization",
+      "description": "Maps ServiceNow values to incident.io for reverse synchronization (ServiceNow → incident.io)",
       "status_mapping": "Maps ServiceNow incident_state values to incident.io status IDs",
       "severity_mapping": "Maps ServiceNow priority values (1-5) to incident.io severity UUIDs",
       "important": "REPLACE THE UUIDs BELOW WITH YOUR ORGANIZATION'S ACTUAL incident.io SEVERITY UUIDs"
@@ -148,7 +210,7 @@
         "priority_1": "Critical priority → Critical severity UUID",
         "priority_2": "High priority → Major severity UUID", 
         "priority_3_5": "Medium/Low/Planning priority → Minor severity UUID",
-        "how_to_find_uuids": "Get these from: curl -H 'Authorization: Bearer YOUR_API_KEY' https://api.incident.io/v1/severities"
+        "how_to_find_uuids": "Get these from your incident.io organization's severity catalog API"
       },
       "1": "01JT3NNT3DH019S8XA0D9YGJEF",
       "2": "01JT3NNT3DTF8D9ZS7QZPFM9QM", 
@@ -157,7 +219,6 @@
       "5": "01JT3NNT3DW44F1KGJ68WDV9R6"
     }
   },
-  
   "validation_rules": {
     "required_fields_creation": ["short_description", "u_incident_io_id"],
     "required_fields_update": ["u_incident_io_id"],
