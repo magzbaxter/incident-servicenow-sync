@@ -22,7 +22,9 @@ This integration synchronizes the following core incident data between systems:
 | **Short Description** | Name | Incident title updates |
 | **Description** | Summary | Description changes |
 | **Priority/Impact/Urgency** | Severity | Priority changes mapped to severity |
-| **State** | Status | Workflow state changes |
+| **State** | Status* | Workflow state changes |
+
+**\* Status Sync Limitation:** incident.io enforces workflow rules that only allow transitions between "live" statuses (Investigating, Fixing, Monitoring). **You cannot close incidents from ServiceNow** - attempting to set ServiceNow incidents to Resolved/Closed will not close the incident.io incident. Close incidents directly in incident.io to maintain proper workflow compliance.
 
 **Key Features:**
 - **Essential field mapping** - Core incident data only, avoiding complex CMDB integrations
