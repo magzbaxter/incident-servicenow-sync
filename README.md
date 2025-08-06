@@ -477,11 +477,6 @@ If you want to automatically add ServiceNow links to your incident.io incidents,
 2. Ensure `SERVICENOW_INSTANCE_URL=https://your-instance.service-now.com` is set
 3. The integration will automatically add ServiceNow links to new incidents
 
-### User Mapping
-
-The integration maps incident.io users to ServiceNow users by name. Ensure that:
-1. User names in incident.io match user names in ServiceNow
-2. ServiceNow users exist for all incident.io users who may be assigned to incidents
 
 ## Troubleshooting
 
