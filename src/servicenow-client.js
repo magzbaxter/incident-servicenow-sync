@@ -115,11 +115,26 @@ class ServiceNowClient {
 
       return response.data.result;
     } catch (error) {
-      this.logger.error('Failed to update ServiceNow incident', {
-        sys_id: sysId,
-        error: error.message,
-        response: error.response?.data
-      });
+      // Check if this is a required field error
+      const responseData = error.response?.data;
+      const isRequiredFieldError = responseData?.error?.message?.toLowerCase().includes('required') ||
+                                   responseData?.error?.detail?.toLowerCase().includes('required') ||
+                                   error.message?.toLowerCase().includes('required');
+      
+      if (isRequiredFieldError) {
+        this.logger.warn('ServiceNow incident update failed due to missing required fields', {
+          sys_id: sysId,
+          error: error.message,
+          servicenow_response: responseData,
+          message: 'ServiceNow requires additional fields to be filled before this incident can be updated to this state'
+        });
+      } else {
+        this.logger.error('Failed to update ServiceNow incident', {
+          sys_id: sysId,
+          error: error.message,
+          response: responseData
+        });
+      }
       throw error;
     }
   }

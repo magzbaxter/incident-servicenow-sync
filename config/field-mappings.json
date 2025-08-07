@@ -95,6 +95,7 @@
         "Paused": "3",
         "Documenting": "6", 
         "Reviewing": "6",
+        "Resolved": "6",
         "Closed": "7",
         "Canceled": "8",
         "Declined": "8",

@@ -98,7 +98,13 @@ class ConfigManager {
           throw new Error(`Required environment variable ${envVar} is not set`);
         }
         
-        obj[key] = envValue || value;
+        // Convert boolean-like strings to actual booleans
+        let finalValue = envValue || value;
+        if (finalValue === 'true') finalValue = true;
+        if (finalValue === 'false') finalValue = false;
+        if (finalValue === '') finalValue = undefined;
+        
+        obj[key] = finalValue;
       } else if (typeof value === 'object' && value !== null) {
         this.substituteEnvironmentVariables(value);
       }
